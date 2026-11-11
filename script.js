@@ -26,6 +26,8 @@ const status = document.getElementById('sync-status');
 function setStatus(message) { status.textContent = message; }
 
 let weekStart=startOfWeek(new Date());
+let monthDate=new Date();
+let viewMode='week';
 let editingId=null;
 const calendar=document.getElementById('calendar');
 const form=document.getElementById('event-form');
@@ -35,10 +37,10 @@ function addDays(date,n){const d=new Date(date);d.setDate(d.getDate()+n);return 
 function iso(date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
 
 function daysLeft(ymd){const today=new Date();const a=Date.UTC(today.getFullYear(),today.getMonth(),today.getDate());const [y,m,d]=ymd.split('-').map(Number);return Math.round((Date.UTC(y,m-1,d)-a)/86400000);}
-function render(){const end=addDays(weekStart,6);document.getElementById('range').textContent=`${iso(weekStart)} ~ ${iso(end)}`;calendar.replaceChildren();const names=['월','화','수','목','금','토','일'];for(let i=0;i<7;i++){const day=addDays(weekStart,i);const date=iso(day);const box=document.createElement('div');box.className='day';const heading=document.createElement('div');heading.className='day-head';heading.textContent=`${names[i]} ${day.getMonth()+1}/${day.getDate()}`;box.append(heading);events.filter(e=>e.date===date).forEach(e=>{const item=document.createElement('div');item.className='event';const subject=document.createElement('strong');subject.textContent=e.subject;const task=document.createElement('span');task.textContent=e.task;const remaining=document.createElement('small');const left=daysLeft(e.date);remaining.textContent=left===0?'D-day':left>0?`D-${left}`:`D+${-left}`;const controls=document.createElement('div');controls.className='controls';const edit=document.createElement('button');edit.textContent='수정';edit.onclick=()=>{editingId=e.id;document.getElementById('subject').value=e.subject;document.getElementById('task').value=e.task;dateInput.value=e.date;document.getElementById('form-title').textContent='수행평가 수정';document.getElementById('cancel').hidden=false;form.scrollIntoView({behavior:'smooth'});};const del=document.createElement('button');del.textContent='삭제';del.onclick=async()=>{if(!confirm('이 일정을 삭제할까?'))return;try{await remove(ref(db,`schedules/${e.id}`));}catch(err){alert('삭제 권한이 없거나 연결에 실패했어. '+err.message);}};if(admin)controls.append(edit,del);item.append(subject,task,remaining);if(admin)item.append(controls);box.append(item);});calendar.append(box);}}
+function render(){const isMonth=viewMode==='month';const monthFirst=new Date(monthDate.getFullYear(),monthDate.getMonth(),1);const monthLast=new Date(monthDate.getFullYear(),monthDate.getMonth()+1,0);const first=isMonth?startOfWeek(monthFirst):weekStart;const end=isMonth?addDays(startOfWeek(monthLast),6):addDays(weekStart,6);document.getElementById('range').textContent=isMonth?`${monthDate.getFullYear()}년 ${monthDate.getMonth()+1}월`:`${iso(weekStart)} ~ ${iso(end)}`;document.getElementById('today').textContent=isMonth?'이번 달':'이번 주';document.getElementById('week-view').setAttribute('aria-pressed',String(!isMonth));document.getElementById('month-view').setAttribute('aria-pressed',String(isMonth));calendar.classList.toggle('month-view',isMonth);calendar.replaceChildren();const names=['월','화','수','목','금','토','일'];const count=isMonth?Math.round((end-first)/86400000)+1:7;for(let i=0;i<count;i++){const day=addDays(first,i);const date=iso(day);const box=document.createElement('div');box.className='day';if(isMonth && day.getMonth()!==monthDate.getMonth())box.classList.add('outside-month');const heading=document.createElement('div');heading.className='day-head';heading.textContent=`${names[i]} ${day.getMonth()+1}/${day.getDate()}`;box.append(heading);events.filter(e=>e.date===date).forEach(e=>{const item=document.createElement('div');item.className='event';const subject=document.createElement('strong');subject.textContent=e.subject;const task=document.createElement('span');task.textContent=e.task;const remaining=document.createElement('small');const left=daysLeft(e.date);remaining.textContent=left===0?'D-day':left>0?`D-${left}`:`D+${-left}`;const controls=document.createElement('div');controls.className='controls';const edit=document.createElement('button');edit.textContent='수정';edit.onclick=()=>{editingId=e.id;document.getElementById('subject').value=e.subject;document.getElementById('task').value=e.task;dateInput.value=e.date;document.getElementById('form-title').textContent='수행평가 수정';document.getElementById('cancel').hidden=false;form.scrollIntoView({behavior:'smooth'});};const del=document.createElement('button');del.textContent='삭제';del.onclick=async()=>{if(!confirm('이 일정을 삭제?'))return;try{await remove(ref(db,`schedules/${e.id}`));}catch(err){alert('삭제 권한이 없거나 연결에 실패했다. '+err.message);}};if(admin)controls.append(edit,del);item.append(subject,task,remaining);if(admin)item.append(controls);box.append(item);});calendar.append(box);}}
 form.addEventListener('submit',async e=>{
   e.preventDefault();
-  if(!ready){alert('아직 데이터베이스 연결 중이야.');return;}
+  if(!ready){alert('아직 데이터베이스 연결 중.');return;}
   const subject=document.getElementById('subject').value.trim();
   const task=document.getElementById('task').value.trim();
   const date=dateInput.value;
@@ -46,14 +48,16 @@ form.addEventListener('submit',async e=>{
   try {
     if(editingId){await update(ref(db,`schedules/${editingId}`),{subject,task,date});}
     else {await set(push(eventsRef),{subject,task,date});}
-    resetForm();weekStart=startOfWeek(new Date(`${date}T12:00:00`));render();
-  } catch(err){alert('저장할 수 없어. 관리자 권한 또는 보안 규칙을 확인해 줘. '+err.message);}
+    resetForm();const savedDate=new Date(`${date}T12:00:00`);weekStart=startOfWeek(savedDate);monthDate=new Date(savedDate.getFullYear(),savedDate.getMonth(),1);render();
+  } catch(err){alert('저장할 수 없다. 관리자 권한 또는 보안 규칙을 확인해라. '+err.message);}
 });
 function resetForm(){form.reset();editingId=null;document.getElementById('form-title').textContent='수행평가 추가';document.getElementById('cancel').hidden=true;}
 document.getElementById('cancel').onclick=resetForm;
-document.getElementById('prev').onclick=()=>{weekStart=addDays(weekStart,-7);render();};
-document.getElementById('next').onclick=()=>{weekStart=addDays(weekStart,7);render();};
-document.getElementById('today').onclick=()=>{weekStart=startOfWeek(new Date());render();};
+document.getElementById('prev').onclick=()=>{if(viewMode==='month')monthDate=new Date(monthDate.getFullYear(),monthDate.getMonth()-1,1);else weekStart=addDays(weekStart,-7);render();};
+document.getElementById('next').onclick=()=>{if(viewMode==='month')monthDate=new Date(monthDate.getFullYear(),monthDate.getMonth()+1,1);else weekStart=addDays(weekStart,7);render();};
+document.getElementById('today').onclick=()=>{weekStart=startOfWeek(new Date());monthDate=new Date();render();};
+document.getElementById('week-view').onclick=()=>{viewMode='week';render();};
+document.getElementById('month-view').onclick=()=>{viewMode='month';render();};
 dateInput.value=iso(new Date());render();
 onAuthStateChanged(auth, user => {
   admin=!!user && !user.isAnonymous && user.uid===ADMIN_UID;
@@ -65,12 +69,12 @@ onAuthStateChanged(auth, user => {
     const data=snapshot.val()||{};
     events=Object.entries(data).map(([id,value])=>({id,...value}));
     ready=true;setStatus('공용 일정 연결됨');render();
-  }, err=>setStatus('일정을 읽지 못했어: '+err.message));
+  }, err=>setStatus('일정을 읽지 못함: '+err.message));
 });
 document.getElementById('admin-login').addEventListener('submit', async e=>{
   e.preventDefault();
   try {await signInWithEmailAndPassword(auth,document.getElementById('admin-email').value,document.getElementById('admin-password').value);document.getElementById('admin-password').value='';authMessage.textContent='관리자 로그인 확인 완료';}
-  catch(err){authMessage.textContent='로그인 실패: 이메일과 비밀번호를 확인해 줘.';}
+  catch(err){authMessage.textContent='로그인 실패: 이메일과 비밀번호를 확인.';}
 });
 document.getElementById('logout').onclick=async()=>{await signOut(auth);await signInAnonymously(auth);};
 if(!auth.currentUser)signInAnonymously(auth).catch(err=>setStatus('로그인 실패: '+err.message));
