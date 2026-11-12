@@ -17,7 +17,14 @@ const eventsRef = ref(db, 'schedules');
 let events = [];
 let ready = false;
 let admin = false;
-const ADMIN_UID = 'yVsFVH4vIBZICv6608ktfhOfiq03';
+// 화면의 관리자 표시 기준. 실제 저장 권한은 database.rules.json으로 제한합니다.
+const ADMIN_UIDS = new Set([
+  'yVsFVH4vIBZICv6608ktfhOfiq03', // 기존 개인 관리자
+  'jXxyKKewPbNDHs2SMIqcZ9oU8ki2' // 선생님 공동 관리자
+]);
+// 로그인 별칭은 공개 정보입니다. 비밀번호는 저장하지 않고 Firebase에서 검증합니다.
+const LOGIN_ALIASES = new Map([['cbnugot', 'cbnupublic@gmail.com']]);
+function isAdminUser(user){return !!user && !user.isAnonymous && ADMIN_UIDS.has(user.uid);}
 let unsubscribe = null;
 const loginPanel = document.getElementById('login-panel');
 const adminControls = document.getElementById('admin-controls');
@@ -74,7 +81,8 @@ document.getElementById('today').onclick=()=>{weekStart=startOfWeek(new Date());
 document.getElementById('planner-toggle').onclick=()=>{viewMode=viewMode==='week'?'month':'week';render();};
 dateInput.value=iso(new Date());render();
 onAuthStateChanged(auth, user => {
-  admin=!!user && !user.isAnonymous && user.uid===ADMIN_UID;
+  admin=isAdminUser(user);
+  ready=false;events=[];
   loginPanel.hidden=admin;adminControls.hidden=!admin;
   resetForm();render();
   if(unsubscribe){unsubscribe();unsubscribe=null;}
@@ -84,12 +92,32 @@ onAuthStateChanged(auth, user => {
     const data=snapshot.val()||{};
     events=Object.entries(data).map(([id,value])=>({id,...value}));
     ready=true;setStatus('공용 일정 연결됨');render();
-  }, err=>setStatus('일정을 읽지 못함: '+err.message));
+  }, err=>{ready=false;events=[];setStatus('일정을 읽지 못함: '+err.message);render();});
 });
 document.getElementById('admin-login').addEventListener('submit', async e=>{
   e.preventDefault();
-  try {await signInWithEmailAndPassword(auth,document.getElementById('admin-email').value,document.getElementById('admin-password').value);document.getElementById('admin-password').value='';authMessage.textContent='관리자 로그인 확인 완료';}
-  catch(err){authMessage.textContent='로그인 실패: 이메일과 비밀번호를 확인.';}
+  const identifier=document.getElementById('admin-identifier').value.trim();
+  const passwordInput=document.getElementById('admin-password');
+  const email=LOGIN_ALIASES.get(identifier) || (identifier.includes('@')?identifier:null);
+  if(!email){passwordInput.value='';authMessage.textContent='로그인 실패: 아이디 또는 이메일과 비밀번호를 확인하세요.';return;}
+  const loginButton=e.currentTarget.querySelector('button[type="submit"]');
+  loginButton.disabled=true;
+  authMessage.textContent='로그인 확인 중…';
+  try {
+    const credential=await signInWithEmailAndPassword(auth,email,passwordInput.value);
+    if(!isAdminUser(credential.user)){
+      await signOut(auth);
+      await signInAnonymously(auth);
+      authMessage.textContent='일정 관리 권한이 없는 계정입니다.';
+      return;
+    }
+    authMessage.textContent='관리자 로그인 확인 완료';
+  } catch(err){
+    authMessage.textContent='로그인 실패: 아이디 또는 이메일과 비밀번호를 확인하세요.';
+  } finally {
+    passwordInput.value='';
+    loginButton.disabled=false;
+  }
 });
 document.getElementById('logout').onclick=async()=>{await signOut(auth);await signInAnonymously(auth);};
 if(!auth.currentUser)signInAnonymously(auth).catch(err=>setStatus('로그인 실패: '+err.message));
