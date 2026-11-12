@@ -1,0 +1,8 @@
+{
+  "rules": {
+    "schedules": {
+      ".read": "auth != null",
+      ".write": "auth != null && (auth.uid === 'yVsFVH4vIBZICv6608ktfhOfiq03' || auth.uid === 'jXxyKKewPbNDHs2SMIqcZ9oU8ki2')"
+    }
+  }
+}
