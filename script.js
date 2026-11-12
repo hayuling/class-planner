@@ -29,6 +29,16 @@ let weekStart=startOfWeek(new Date());
 let monthDate=new Date();
 let viewMode='week';
 let editingId=null;
+const classSelect=document.getElementById('class-select');
+const eventClass=document.getElementById('event-class');
+let selectedClass='1';
+try {const saved=localStorage.getItem('class-planner-class');if(/^[1-6]$/.test(saved))selectedClass=saved;} catch {}
+classSelect.value=selectedClass;
+eventClass.value=selectedClass;
+function belongsToClass(event){return String(event.classId)===selectedClass;}
+function updateClassMessage(){document.getElementById('class-message').textContent=`${selectedClass}반 일정입니다. 새 일정도 ${selectedClass}반에 등록됩니다.`;}
+classSelect.addEventListener('change',()=>{selectedClass=classSelect.value;resetForm();try{localStorage.setItem('class-planner-class',selectedClass);}catch{}updateClassMessage();render();});
+updateClassMessage();
 const calendar=document.getElementById('calendar');
 const form=document.getElementById('event-form');
 const dateInput=document.getElementById('date');
@@ -37,21 +47,26 @@ function addDays(date,n){const d=new Date(date);d.setDate(d.getDate()+n);return 
 function iso(date){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
 
 function daysLeft(ymd){const today=new Date();const a=Date.UTC(today.getFullYear(),today.getMonth(),today.getDate());const [y,m,d]=ymd.split('-').map(Number);return Math.round((Date.UTC(y,m-1,d)-a)/86400000);}
-function render(){const isMonth=viewMode==='month';const monthFirst=new Date(monthDate.getFullYear(),monthDate.getMonth(),1);const monthLast=new Date(monthDate.getFullYear(),monthDate.getMonth()+1,0);const first=isMonth?startOfWeek(monthFirst):weekStart;const end=isMonth?addDays(startOfWeek(monthLast),6):addDays(weekStart,6);document.getElementById('range').textContent=isMonth?`${monthDate.getFullYear()}년 ${monthDate.getMonth()+1}월`:`${iso(weekStart)} ~ ${iso(end)}`;document.getElementById('today').textContent=isMonth?'이번 달':'이번 주';const plannerToggle=document.getElementById('planner-toggle');plannerToggle.textContent=isMonth?'Monthly Planner':'Weekly Planner';plannerToggle.setAttribute('aria-label',isMonth?'주간 보기로 전환':'월간 보기로 전환');calendar.classList.toggle('month-view',isMonth);calendar.replaceChildren();const names=['월','화','수','목','금','토','일'];const count=isMonth?Math.round((end-first)/86400000)+1:7;for(let i=0;i<count;i++){const day=addDays(first,i);const date=iso(day);const box=document.createElement('div');box.className='day';if(isMonth && day.getMonth()!==monthDate.getMonth())box.classList.add('outside-month');const heading=document.createElement('div');heading.className='day-head';heading.textContent=`${names[i % 7]} ${day.getMonth()+1}/${day.getDate()}`;box.append(heading);events.filter(e=>e.date===date).forEach(e=>{const item=document.createElement('div');item.className='event';const subject=document.createElement('strong');subject.textContent=e.subject;const task=document.createElement('span');task.textContent=e.task;const remaining=document.createElement('small');const left=daysLeft(e.date);remaining.textContent=left===0?'D-day':left>0?`D-${left}`:`D+${-left}`;const controls=document.createElement('div');controls.className='controls';const edit=document.createElement('button');edit.textContent='수정';edit.onclick=()=>{editingId=e.id;document.getElementById('subject').value=e.subject;document.getElementById('task').value=e.task;dateInput.value=e.date;document.getElementById('form-title').textContent='수행평가 수정';document.getElementById('cancel').hidden=false;form.scrollIntoView({behavior:'smooth'});};const del=document.createElement('button');del.textContent='삭제';del.onclick=async()=>{if(!confirm('이 일정을 삭제?'))return;try{await remove(ref(db,`schedules/${e.id}`));}catch(err){alert('삭제 권한이 없거나 연결에 실패했다. '+err.message);}};if(admin)controls.append(edit,del);item.append(subject,task,remaining);if(admin)item.append(controls);box.append(item);});calendar.append(box);}}
+function render(){const isMonth=viewMode==='month';const monthFirst=new Date(monthDate.getFullYear(),monthDate.getMonth(),1);const monthLast=new Date(monthDate.getFullYear(),monthDate.getMonth()+1,0);const first=isMonth?startOfWeek(monthFirst):weekStart;const end=isMonth?addDays(startOfWeek(monthLast),6):addDays(weekStart,6);document.getElementById('range').textContent=isMonth?`${monthDate.getFullYear()}년 ${monthDate.getMonth()+1}월`:`${iso(weekStart)} ~ ${iso(end)}`;document.getElementById('today').textContent=isMonth?'이번 달':'이번 주';const plannerToggle=document.getElementById('planner-toggle');plannerToggle.textContent=isMonth?'Monthly Planner':'Weekly Planner';plannerToggle.setAttribute('aria-label',isMonth?'주간 보기로 전환':'월간 보기로 전환');calendar.classList.toggle('month-view',isMonth);calendar.replaceChildren();const names=['월','화','수','목','금','토','일'];const count=isMonth?Math.round((end-first)/86400000)+1:7;for(let i=0;i<count;i++){const day=addDays(first,i);const date=iso(day);const box=document.createElement('div');box.className='day';if(isMonth && day.getMonth()!==monthDate.getMonth())box.classList.add('outside-month');const heading=document.createElement('div');heading.className='day-head';heading.textContent=`${names[i % 7]} ${day.getMonth()+1}/${day.getDate()}`;box.append(heading);events.filter(e=>belongsToClass(e)&&e.date===date).forEach(e=>{const item=document.createElement('div');item.className='event';const subject=document.createElement('strong');subject.textContent=e.subject;const task=document.createElement('span');task.textContent=e.task;const remaining=document.createElement('small');const left=daysLeft(e.date);remaining.textContent=left===0?'D-day':left>0?`D-${left}`:`D+${-left}`;const controls=document.createElement('div');controls.className='controls';const edit=document.createElement('button');edit.textContent='수정';edit.onclick=()=>{editingId=e.id;eventClass.value=/^[1-6]$/.test(String(e.classId))?String(e.classId):'';document.getElementById('subject').value=e.subject;document.getElementById('task').value=e.task;dateInput.value=e.date;document.getElementById('form-title').textContent='수행평가 수정';document.getElementById('cancel').hidden=false;form.scrollIntoView({behavior:'smooth'});};const del=document.createElement('button');del.textContent='삭제';del.onclick=async()=>{if(!confirm('이 일정을 삭제?'))return;try{await remove(ref(db,`schedules/${e.id}`));}catch(err){alert('삭제 권한이 없거나 연결에 실패했다. '+err.message);}};if(admin)controls.append(edit,del);item.append(subject,task,remaining);if(admin)item.append(controls);box.append(item);});calendar.append(box);}}
 form.addEventListener('submit',async e=>{
   e.preventDefault();
+  if(!admin){alert('관리자 로그인 후 저장할 수 있어요.');return;}
   if(!ready){alert('아직 데이터베이스 연결 중.');return;}
   const subject=document.getElementById('subject').value.trim();
   const task=document.getElementById('task').value.trim();
   const date=dateInput.value;
+  const classId=eventClass.value;
+  if(!/^[1-6]$/.test(classId))return;
   if(!subject||!task||!date)return;
   try {
-    if(editingId){await update(ref(db,`schedules/${editingId}`),{subject,task,date});}
-    else {await set(push(eventsRef),{subject,task,date});}
+    if(editingId){await update(ref(db,`schedules/${editingId}`),{subject,task,date,classId});}
+    else {await set(push(eventsRef),{subject,task,date,classId});}
+    selectedClass=classId;classSelect.value=classId;updateClassMessage();
+    try{localStorage.setItem('class-planner-class',classId);}catch{}
     resetForm();const savedDate=new Date(`${date}T12:00:00`);weekStart=startOfWeek(savedDate);monthDate=new Date(savedDate.getFullYear(),savedDate.getMonth(),1);render();
   } catch(err){alert('저장할 수 없다. 관리자 권한 또는 보안 규칙을 확인해라. '+err.message);}
 });
-function resetForm(){form.reset();editingId=null;document.getElementById('form-title').textContent='수행평가 추가';document.getElementById('cancel').hidden=true;}
+function resetForm(){form.reset();eventClass.value=selectedClass;dateInput.value=iso(new Date());editingId=null;document.getElementById('form-title').textContent='수행평가 추가';document.getElementById('cancel').hidden=true;}
 document.getElementById('cancel').onclick=resetForm;
 document.getElementById('prev').onclick=()=>{if(viewMode==='month')monthDate=new Date(monthDate.getFullYear(),monthDate.getMonth()-1,1);else weekStart=addDays(weekStart,-7);render();};
 document.getElementById('next').onclick=()=>{if(viewMode==='month')monthDate=new Date(monthDate.getFullYear(),monthDate.getMonth()+1,1);else weekStart=addDays(weekStart,7);render();};
@@ -61,6 +76,7 @@ dateInput.value=iso(new Date());render();
 onAuthStateChanged(auth, user => {
   admin=!!user && !user.isAnonymous && user.uid===ADMIN_UID;
   loginPanel.hidden=admin;adminControls.hidden=!admin;
+  resetForm();render();
   if(unsubscribe){unsubscribe();unsubscribe=null;}
   if(!user){ready=false;setStatus('로그인 연결 중…');return;}
   setStatus('연결 중…');
